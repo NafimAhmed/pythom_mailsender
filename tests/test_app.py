@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from app import app, load_project_env
+from graph_mail import GraphMailError
 
 
 class MailSenderTests(unittest.TestCase):
@@ -84,7 +85,7 @@ class MailSenderTests(unittest.TestCase):
             self.assertEqual(response.json["recipient_count"], 2)
             mocked_sender.assert_called_once()
 
-    @patch("app.send_via_graph", side_effect=__import__("graph_mail").GraphMailError("Graph sendMail endpoint", 403))
+    @patch("app.send_via_graph", side_effect=GraphMailError("Graph sendMail endpoint", 403))
     def test_graph_permission_failure(self, mocked_sender):
         with patch.dict(os.environ, {"MAIL_PROVIDER": "graph"}):
             data = {"to": "a@example.com", "subject": "Graph", "body": "Hello"}
