@@ -98,3 +98,49 @@ No real SMTP messages are sent in the tests.
 - SMTP authentication uses TLS (`STARTTLS` port 587 or implicit SSL port 465). This example deliberately does not implement unauthenticated SMTP or OAuth2.
 - Sender address must normally be an address authorized by the SMTP provider; otherwise the provider may rewrite or reject the email.
 - Never log or commit secrets, and never expose this API directly to arbitrary clients without additional protections.
+
+
+## Fixing `401 Unauthorized` on Windows / PyCharm
+
+This version loads the `.env` file **next to `app.py`**, regardless of the current working directory (including PyCharm's test runner), and gives it priority over stale values in the parent shell.
+
+1. Copy `.env.example` to `.env` **in the folder containing `app.py`** and set a strong `MAIL_API_KEY`. Do not put the literal placeholder into Postman.
+2. In Postman, set the collection variable `api_key` to the exact `MAIL_API_KEY` value (without `Bearer`), or use `X-API-Key` directly in the request headers. An `Unauthorized` response means the submitted key is missing or differs from the server's configured key.
+3. Stop and restart Flask after editing `.env`.
+4. Verify that the file contains a configured key without printing the secret:
+
+```powershell
+.\.venv\Scripts\python.exe -c "from pathlib import Path; from dotenv import dotenv_values; p=Path('app.py').resolve().parent/'.env'; k=(dotenv_values(p).get('MAIL_API_KEY') or '').strip(); print('Found .env:',p.is_file(),'Key configured:',bool(k),'Key length:',len(k))"
+```
+
+You can test without manually pasting the key by running the following **in a second PowerShell window** from the project directory while Flask is running:
+
+```powershell
+$key = ((Get-Content .env | Where-Object { $_ -match '^MAIL_API_KEY=' } | Select-Object -First 1) -split '=', 2)[1].Trim()
+$body = @{ to = @('receiver@example.com'); subject = 'Flask Test'; body = 'Hello from Flask' } | ConvertTo-Json
+Invoke-RestMethod -Uri 'http://127.0.0.1:5000/api/v1/mail/send' -Method POST -Headers @{ 'X-API-Key' = $key } -ContentType 'application/json' -Body $body
+```
+
+Change `receiver@example.com` to your own test recipient. A `502 SMTP authentication failed` response is a **separate issue** from a `401` API key mismatch; Gmail normally needs a valid 16-character Google App Password instead of the account password.
+
+**Security:** Rotate any API key or SMTP password previously shared in screenshots or chat. The real `.env` belongs only on your machine and must never be committed. The `.env.example` file intentionally contains placeholders.
+
+## Set credentials securely on Windows (recommended)
+
+**Do not send App Passwords or API keys in chat, screenshots, issues, or public commits.** If one was exposed, revoke it in Google Account settings and generate a new one.
+
+Run the local setup assistant from the repository root in PowerShell:
+
+```powershell
+powershell -NoProfile -File .\setup_mail.ps1
+```
+
+It asks for the sender Gmail address and a **new** 16-character Google App Password (entered invisibly), generates a cryptographically random API key, and writes **only your local** `.env` beside `app.py`. If `.env` already exists, you must type `YES` to overwrite it; otherwise the script changes nothing. No credential is committed or sent to GitHub.
+
+If PowerShell blocks running local scripts, use a process-only execution-policy override for this trusted repository script:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_mail.ps1
+```
+
+Restart Flask after setup. In Postman set the `api_key` collection variable to `MAIL_API_KEY` from your local `.env` file. **The generated key is not printed to the console.** For security, never paste your private key into GitHub.

@@ -1,9 +1,11 @@
 """API tests; SMTP is mocked so no real email is sent."""
 import os
+import tempfile
+from pathlib import Path
 import unittest
 from unittest.mock import MagicMock, patch
 
-from app import app
+from app import app, load_project_env
 
 
 class MailSenderTests(unittest.TestCase):
@@ -28,6 +30,34 @@ class MailSenderTests(unittest.TestCase):
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json["success"])
+
+    def test_env_file_is_loaded_from_project_directory_and_overrides_stale_key(self):
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / ".env").write_text(
+                "MAIL_API_KEY=key-from-project-env\n", encoding="utf-8"
+            )
+            with patch("app.BASE_DIR", Path(folder)), patch.dict(
+                os.environ, {"MAIL_API_KEY": "stale-shell-key"}
+            ):
+                load_project_env()
+                self.assertEqual(os.environ["MAIL_API_KEY"], "key-from-project-env")
+
+    def test_wrong_api_key_returns_401(self):
+        response = self.client.post(
+            "/api/v1/mail/send",
+            headers={"X-API-Key": "not-the-right-key"},
+            json={"to": "a@example.com", "subject": "Hi", "body": "Hello"},
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json["error"], "Unauthorized")
+
+    def test_missing_server_api_key_returns_503(self):
+        with patch.dict(os.environ, {"MAIL_API_KEY": ""}):
+            response = self.client.post(
+                "/api/v1/mail/send", headers=self.headers,
+                json={"to": "a@example.com", "subject": "Hi", "body": "Hello"},
+            )
+            self.assertEqual(response.status_code, 503)
 
     def test_requires_api_key(self):
         response = self.client.post("/api/v1/mail/send", json={"to": "a@example.com"})
