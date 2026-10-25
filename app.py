@@ -1,14 +1,10 @@
-"""Authenticated Flask JSON API for sending text/HTML messages over SMTP."""
+"""Authenticated Flask API for sending email through Microsoft Graph (OAuth2)."""
 
 import hmac
 import logging
 import os
 import re
-import smtplib
-import ssl
 from pathlib import Path
-from email.message import EmailMessage
-from email.utils import formatdate, make_msgid
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
@@ -95,55 +91,6 @@ def validate_payload(payload):
             "subject": subject.strip(), "body": body, "html": html}
 
 
-def smtp_config():
-    config = {
-        "host": os.getenv("SMTP_HOST", "").strip(),
-        "port": int(os.getenv("SMTP_PORT", "587")),
-        "security": os.getenv("SMTP_SECURITY", "starttls").strip().lower(),
-        "user": os.getenv("SMTP_USER", "").strip(),
-        "password": os.getenv("SMTP_PASSWORD", ""),
-        "from": os.getenv("SMTP_FROM", os.getenv("SMTP_USER", "")).strip(),
-    }
-    if (not config["host"] or not config["user"] or not config["password"]
-            or not EMAIL_RE.fullmatch(config["from"])
-            or config["security"] not in {"starttls", "ssl"}
-            or not 1 <= config["port"] <= 65535):
-        raise RuntimeError("SMTP environment variables are missing or invalid")
-    return config
-
-
-def send_via_smtp(data, config):
-    message = EmailMessage()
-    message["From"] = config["from"]
-    message["To"] = ", ".join(data["to"])
-    if data["cc"]:
-        message["Cc"] = ", ".join(data["cc"])
-    # BCC intentionally absent from message headers; SMTP envelope includes it.
-    message["Subject"] = data["subject"]
-    message["Date"] = formatdate(localtime=False)
-    message["Message-ID"] = make_msgid(domain=config["from"].rsplit("@", 1)[1])
-    message.set_content(data["body"] or "This message contains HTML content.")
-    if data["html"]:
-        message.add_alternative(data["html"], subtype="html")
-
-    context = ssl.create_default_context()
-    smtp_class = smtplib.SMTP_SSL if config["security"] == "ssl" else smtplib.SMTP
-    smtp_kwargs = {"timeout": 20}
-    if config["security"] == "ssl":
-        smtp_kwargs["context"] = context
-
-    with smtp_class(config["host"], config["port"], **smtp_kwargs) as server:
-        if config["security"] == "starttls":
-            server.ehlo()
-            server.starttls(context=context)
-            server.ehlo()
-        server.login(config["user"], config["password"])
-        refused = server.send_message(
-            message, from_addr=config["from"], to_addrs=data["recipients"]
-        )
-    return list(refused)
-
-
 @app.get("/health")
 def health():
     return jsonify({"success": True, "service": "flask-mail-sender"}), 200
@@ -167,50 +114,22 @@ def send_mail():
     except BadRequest as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
 
-    provider = os.getenv("MAIL_PROVIDER", "smtp").strip().lower()
-    if provider == "graph":
-        try:
-            send_via_graph(payload)
-        except ValueError:
-            app.logger.error("Microsoft Graph configuration is incomplete")
-            return jsonify({"success": False, "error": "Microsoft Graph is not configured correctly"}), 503
-        except GraphMailError as exc:
-            app.logger.error("%s", exc)
-            return jsonify({"success": False, "error": "Microsoft Graph authorization or delivery error",
-                            "upstream_status": exc.status_code}), 502
-        except requests.exceptions.RequestException:
-            app.logger.exception("Microsoft Graph connection or response failed")
-            return jsonify({"success": False, "error": "Microsoft Graph connection error"}), 502
-
-        # Graph HTTP 202 means accepted for processing, not confirmed inbox delivery.
-        return jsonify({"success": True, "message": "Email accepted by Microsoft Graph",
-                        "recipient_count": len(payload["recipients"])}), 200
-
-    if provider != "smtp":
-        return jsonify({"success": False, "error": "Unsupported MAIL_PROVIDER"}), 503
-
     try:
-        config = smtp_config()
-    except (RuntimeError, ValueError) as exc:
-        app.logger.error("SMTP configuration error: %s", exc)
-        return jsonify({"success": False, "error": "SMTP is not configured correctly"}), 503
+        send_via_graph(payload)
+    except ValueError:
+        app.logger.error("Microsoft Graph configuration is incomplete")
+        return jsonify({"success": False, "error": "Microsoft Graph is not configured correctly"}), 503
+    except GraphMailError as exc:
+        app.logger.error("%s", exc)
+        return jsonify({"success": False, "error": "Microsoft Graph authorization or delivery error",
+                        "upstream_status": exc.status_code}), 502
+    except requests.exceptions.RequestException:
+        app.logger.exception("Microsoft Graph connection failed")
+        return jsonify({"success": False, "error": "Microsoft Graph connection error"}), 502
 
-    try:
-        refused = send_via_smtp(payload, config)
-    except smtplib.SMTPAuthenticationError:
-        app.logger.exception("SMTP authentication failed")
-        return jsonify({"success": False, "error": "SMTP authentication failed"}), 502
-    except (smtplib.SMTPException, OSError, TimeoutError):
-        app.logger.exception("SMTP delivery attempt failed")
-        return jsonify({"success": False, "error": "SMTP server error"}), 502
-
-    accepted = len(payload["recipients"]) - len(refused)
-    if refused:
-        return jsonify({"success": False, "message": "Some recipients rejected by SMTP server",
-                        "accepted_count": accepted, "rejected_count": len(refused)}), 502
-    # 'success' means SMTP accepted the message, not inbox delivery is guaranteed.
-    return jsonify({"success": True, "message": "Email accepted by SMTP server",
-                    "recipient_count": accepted}), 200
+    # Microsoft Graph returns HTTP 202 for accepted processing, not inbox delivery.
+    return jsonify({"success": True, "message": "Email accepted by Microsoft Graph",
+                    "recipient_count": len(payload["recipients"])}), 200
 
 
 @app.errorhandler(413)
