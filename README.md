@@ -144,3 +144,39 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_mail.ps1
 ```
 
 Restart Flask after setup. In Postman set the `api_key` collection variable to `MAIL_API_KEY` from your local `.env` file. **The generated key is not printed to the console.** For security, never paste your private key into GitHub.
+
+
+## Microsoft 365 Outlook sender (Microsoft Graph app-only OAuth2)
+
+For an **Exchange Online** mailbox, use Microsoft Graph instead of Gmail SMTP.
+**This requires IT/admin approval.** Simply being able to sign in to Outlook does not prove the mailbox supports this integration.
+
+1. Ask your Microsoft 365 admin to register a single-tenant app in https://entra.microsoft.com/.
+2. Under **API Permissions**, choose **Microsoft Graph > Application permissions > Mail.Send**, and grant admin consent. **Mail.Send application permission is powerful**: by default it may allow sending as any mailbox. Restrict permissions to the intended sender using Exchange Online **RBAC for Applications**; do not use a tenant-wide send permission without appropriate scoping.
+3. Record Tenant (directory) ID, Application (client) ID, and a newly created client secret (the secret **Value**, not its ID). Keep them private.
+4. In the local (never committed) .env, use:
+
+```env
+MAIL_PROVIDER=graph
+MAIL_API_KEY=YOUR_PRIVATE_API_KEY
+MS_TENANT_ID=YOUR_TENANT_GUID
+MS_CLIENT_ID=YOUR_APPLICATION_CLIENT_GUID
+MS_CLIENT_SECRET=YOUR_NEW_CLIENT_SECRET
+MS_SENDER_EMAIL=mailbox@company.com
+PORT=5001
+```
+
+5. Install updated dependencies: `python -m pip install -r requirements.txt`; restart the Flask or Waitress process.
+6. Test the **same** POST `/api/v1/mail/send` with the same `X-API-Key` header and `to`, `cc`, `bcc`, `subject`, `body`, and `html` fields. Sender is configured server-side, not accepted from client JSON.
+7. A response of HTTP 200 from Flask means Graph returned HTTP 202 **Accepted**. Microsoft Graph does not guarantee inbox delivery.
+
+The Graph OAuth flow requests a token from `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token` with scope `https://graph.microsoft.com/.default` and calls `POST https://graph.microsoft.com/v1.0/users/{mailbox}/sendMail`.
+
+Errors: A `503` can mean missing Graph configuration. A `502` with `upstream_status: 401` normally indicates invalid token/audience; `403` normally indicates missing consent/authorization or mailbox scope; `404` can indicate an incorrect mailbox. Ask IT to inspect application permissions and Exchange Online mailbox authorization. Never log secrets, tokens, or full privileged request headers.
+
+You can revert to Gmail SMTP by setting `MAIL_PROVIDER=smtp` and restarting, using the original `SMTP_*` variables.
+
+References:
+- https://learn.microsoft.com/en-us/graph/auth-v2-service
+- https://learn.microsoft.com/en-us/graph/api/user-sendmail
+- https://learn.microsoft.com/en-us/exchange/permissions-exo/application-rbac

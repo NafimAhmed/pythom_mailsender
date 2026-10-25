@@ -6,12 +6,14 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from app import app, load_project_env
+from graph_mail import GraphMailError
 
 
 class MailSenderTests(unittest.TestCase):
     def setUp(self):
         self.env_patch = patch.dict(os.environ, {
             "MAIL_API_KEY": "local-test-api-key",
+            "MAIL_PROVIDER": "smtp",
             "SMTP_HOST": "smtp.example.com",
             "SMTP_PORT": "587",
             "SMTP_SECURITY": "starttls",
@@ -72,6 +74,24 @@ class MailSenderTests(unittest.TestCase):
         response = self.client.post("/api/v1/mail/send", headers=self.headers,
                                     json={"to": "a@example.com", "subject": "X\r\nBcc: bad@example.com", "body": "Y"})
         self.assertEqual(response.status_code, 400)
+
+    @patch("app.send_via_graph")
+    def test_graph_provider_keeps_existing_endpoint(self, mocked_sender):
+        with patch.dict(os.environ, {"MAIL_PROVIDER": "graph"}):
+            data = {"to": ["a@example.com"], "cc": ["b@example.com"],
+                    "subject": "Graph", "body": "Hello", "html": "<h1>Hello</h1>"}
+            response = self.client.post("/api/v1/mail/send", headers=self.headers, json=data)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json["recipient_count"], 2)
+            mocked_sender.assert_called_once()
+
+    @patch("app.send_via_graph", side_effect=GraphMailError("Graph sendMail endpoint", 403))
+    def test_graph_permission_failure(self, mocked_sender):
+        with patch.dict(os.environ, {"MAIL_PROVIDER": "graph"}):
+            data = {"to": "a@example.com", "subject": "Graph", "body": "Hello"}
+            response = self.client.post("/api/v1/mail/send", headers=self.headers, json=data)
+            self.assertEqual(response.status_code, 502)
+            self.assertEqual(response.json["upstream_status"], 403)
 
     @patch("app.smtplib.SMTP")
     def test_send_text_html_cc_bcc(self, smtp):
