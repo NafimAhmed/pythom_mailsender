@@ -12,6 +12,9 @@ from email.utils import formatdate, make_msgid
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
+from graph_mail import GraphMailError, send_via_graph
+
+import requests
 
 # Read the .env beside this file, regardless of the PyCharm working directory.
 # A local .env takes priority over old MAIL_API_KEY values in the shell.
@@ -163,6 +166,28 @@ def send_mail():
         payload = validate_payload(request.get_json(silent=True))
     except BadRequest as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
+
+    provider = os.getenv("MAIL_PROVIDER", "smtp").strip().lower()
+    if provider == "graph":
+        try:
+            send_via_graph(payload)
+        except ValueError:
+            app.logger.error("Microsoft Graph configuration is incomplete")
+            return jsonify({"success": False, "error": "Microsoft Graph is not configured correctly"}), 503
+        except GraphMailError as exc:
+            app.logger.error("%s", exc)
+            return jsonify({"success": False, "error": "Microsoft Graph authorization or delivery error",
+                            "upstream_status": exc.status_code}), 502
+        except (requests.exceptions.RequestException, ValueError):
+            app.logger.exception("Microsoft Graph connection or response failed")
+            return jsonify({"success": False, "error": "Microsoft Graph connection error"}), 502
+
+        # Graph HTTP 202 means accepted for processing, not confirmed inbox delivery.
+        return jsonify({"success": True, "message": "Email accepted by Microsoft Graph",
+                        "recipient_count": len(payload["recipients"])}), 200
+
+    if provider != "smtp":
+        return jsonify({"success": False, "error": "Unsupported MAIL_PROVIDER"}), 503
 
     try:
         config = smtp_config()
