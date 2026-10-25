@@ -6,13 +6,26 @@ import os
 import re
 import smtplib
 import ssl
+from pathlib import Path
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 
-load_dotenv()
+# Always load the .env located beside app.py, even when started from PyCharm or
+# a terminal whose working directory is different. Local .env takes precedence
+# over stale process variables. Do not deploy a .env containing real credentials.
+BASE_DIR = Path(__file__).resolve().parent
+
+
+def load_project_env():
+    env_file = BASE_DIR / ".env"
+    if env_file.is_file():
+        load_dotenv(dotenv_path=env_file, override=True)
+
+
+load_project_env()
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 256 * 1024  # 256 KiB JSON request limit
@@ -136,11 +149,11 @@ def health():
 
 @app.post("/api/v1/mail/send")
 def send_mail():
-    expected_key = os.getenv("MAIL_API_KEY", "")
+    expected_key = os.getenv("MAIL_API_KEY", "").strip()
     if not expected_key:
         return jsonify({"success": False, "error": "MAIL_API_KEY is not configured"}), 503
 
-    supplied_key = request.headers.get("X-API-Key", "")
+    supplied_key = request.headers.get("X-API-Key", "").strip()
     if not hmac.compare_digest(supplied_key, expected_key):
         return jsonify({"success": False, "error": "Unauthorized"}), 401
 
