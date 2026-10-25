@@ -13,9 +13,8 @@ from email.utils import formatdate, make_msgid
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 
-# Always load the .env located beside app.py, even when started from PyCharm or
-# a terminal whose working directory is different. Local .env takes precedence
-# over stale process variables. Do not deploy a .env containing real credentials.
+# Read the .env beside this file, regardless of the PyCharm working directory.
+# A local .env takes priority over old MAIL_API_KEY values in the shell.
 BASE_DIR = Path(__file__).resolve().parent
 
 
