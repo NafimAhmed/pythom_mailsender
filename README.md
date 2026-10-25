@@ -124,3 +124,23 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:5000/api/v1/mail/send' -Method POST -He
 Change `receiver@example.com` to your own test recipient. A `502 SMTP authentication failed` response is a **separate issue** from a `401` API key mismatch; Gmail normally needs a valid 16-character Google App Password instead of the account password.
 
 **Security:** Rotate any API key or SMTP password previously shared in screenshots or chat. The real `.env` belongs only on your machine and must never be committed. The `.env.example` file intentionally contains placeholders.
+
+## Set credentials securely on Windows (recommended)
+
+**Do not send App Passwords or API keys in chat, screenshots, issues, or public commits.** If one was exposed, revoke it in Google Account settings and generate a new one.
+
+Run the local setup assistant from the repository root in PowerShell:
+
+```powershell
+powershell -NoProfile -File .\setup_mail.ps1
+```
+
+It asks for the sender Gmail address and a **new** 16-character Google App Password (entered invisibly), generates a cryptographically random API key, and writes **only your local** `.env` beside `app.py`. If `.env` already exists, you must type `YES` to overwrite it; otherwise the script changes nothing. No credential is committed or sent to GitHub.
+
+If PowerShell blocks running local scripts, use a process-only execution-policy override for this trusted repository script:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_mail.ps1
+```
+
+Restart Flask after setup. In Postman set the `api_key` collection variable to `MAIL_API_KEY` from your local `.env` file. **The generated key is not printed to the console.** For security, never paste your private key into GitHub.
