@@ -34,7 +34,7 @@ class MailSenderTests(unittest.TestCase):
     def test_env_file_is_loaded_from_project_directory_and_overrides_stale_key(self):
         with tempfile.TemporaryDirectory() as folder:
             (Path(folder) / ".env").write_text(
-                "MAIL_API_KEY=key-from-project-env\\n", encoding="utf-8"
+                "MAIL_API_KEY=key-from-project-env\n", encoding="utf-8"
             )
             with patch("app.BASE_DIR", Path(folder)), patch.dict(
                 os.environ, {"MAIL_API_KEY": "stale-shell-key"}
