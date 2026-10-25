@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "Flask Mail Sender API",
-    "description": "Authenticate using X-API-Key, then send SMTP email.",
+    "name": "Microsoft 365 Graph Mail Sender API",
+    "description": "Microsoft Graph OAuth2 app-only sender, authenticated by X-API-Key. Configure credentials in server .env.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -36,7 +36,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"to\": \"recipient@example.com\",\n  \"subject\": \"Hello from Flask\",\n  \"body\": \"Test mail from API.\",\n  \"html\": \"<h2>Hello</h2><p>Test mail from API.</p>\"\n}",
+          "raw": "{\n  \"to\": [\n    \"recipient@example.com\"\n  ],\n  \"subject\": \"Microsoft 365 Graph Test\",\n  \"body\": \"Hello from Microsoft Graph\",\n  \"html\": \"<h2>Hello</h2><p>Microsoft 365 Graph test</p>\"\n}",
           "options": {
             "raw": {
               "language": "json"
