@@ -178,7 +178,7 @@ def send_mail():
             app.logger.error("%s", exc)
             return jsonify({"success": False, "error": "Microsoft Graph authorization or delivery error",
                             "upstream_status": exc.status_code}), 502
-        except (requests.exceptions.RequestException, ValueError):
+        except requests.exceptions.RequestException:
             app.logger.exception("Microsoft Graph connection or response failed")
             return jsonify({"success": False, "error": "Microsoft Graph connection error"}), 502
 
